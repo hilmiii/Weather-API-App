@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import mqtt from 'mqtt';
 
 const App = () => {
   const [weather, setWeather] = useState(null);
@@ -38,18 +39,29 @@ const App = () => {
     return () => clearInterval(timer);
   }, [alarm, isAlarmPlaying]); // isAlarmPlaying sekarang terdefinisi
 
+useEffect(() => {
+  // Gunakan port 8884 untuk WSS (Secure WebSockets) agar aman di Vercel
+  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+
+  client.on('connect', () => {
+    console.log("MQTT Connected via WSS");
+  });
+
+  // Simpan client ke dalam useRef atau state agar bisa digunakan di fungsi playAlarm
+  mqttClientRef.current = client;
+
+  return () => client.end();
+}, []);
+
 const playAlarm = () => {
   setIsAlarmPlaying(true);
-  audioRef.current.play().catch(error => console.log(error));
+  audioRef.current.play();
 
-  const ESP_IP = "192.168.1.8"; // Pastikan IP ini benar (bukan 192.168.4.1 jika sudah terhubung WiFi)
-  
-  fetch(`http://${ESP_IP}/trigger-alarm`, {
-    mode: 'no-cors', // Menghindari beberapa batasan browser
-  })
-  .then(() => console.log("Sinyal terkirim ke ESP8266"))
-  .catch(err => console.error("Gagal menghubungi ESP8266", err));
-};
+  // Kirim perintah ke ESP8266
+  if (mqttClientRef.current) {
+    mqttClientRef.current.publish('cocod/weather/alarm', 'ON');
+  }
+}; 
 
   const stopAlarm = () => {
     if (audioRef.current) {

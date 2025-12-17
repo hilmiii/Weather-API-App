@@ -7,27 +7,25 @@ const App = () => {
   const [alarm, setAlarm] = useState("");
   const [logs, setLogs] = useState([]);
   const [bgImage, setBgImage] = useState('/img/fair.jpg');
-  
-  // Perbaikan 1: Tambahkan state isAlarmPlaying agar tidak terjadi ReferenceError
   const [isAlarmPlaying, setIsAlarmPlaying] = useState(false);
 
-  // Perbaikan 2: Inisialisasi audio dengan path absolut untuk folder public Vite
+  // Perbaikan: Tambahkan useRef untuk audio dan mqttClient
   const audioRef = useRef(null);
+  const mqttClientRef = useRef(null); // <--- BARIS INI YANG TADI KURANG
 
   const API_KEY = "be4f709beb35221438738382074a6cc8";
 
   useEffect(() => {
-    // Inisialisasi objek audio satu kali saat mount
     audioRef.current = new Audio('/alarm.mp3');
     audioRef.current.loop = true;
   }, []);
 
+  // Timer dan Cek Alarm
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
       setTime(now);
 
-      // Perbaikan 3: Logika cek alarm menggunakan Jam:Menit saja agar akurat
       const hours = String(now.getHours()).padStart(2, '0');
       const minutes = String(now.getMinutes()).padStart(2, '0');
       const currentTimeString = `${hours}:${minutes}`;
@@ -37,31 +35,37 @@ const App = () => {
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [alarm, isAlarmPlaying]); // isAlarmPlaying sekarang terdefinisi
+  }, [alarm, isAlarmPlaying]);
 
-useEffect(() => {
-  // Gunakan port 8884 untuk WSS (Secure WebSockets) agar aman di Vercel
-  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+  // Koneksi MQTT
+  useEffect(() => {
+    // Gunakan port 8884 untuk WSS (Secure WebSockets) agar aman di Vercel
+    const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
 
-  client.on('connect', () => {
-    console.log("MQTT Connected via WSS");
-  });
+    client.on('connect', () => {
+      console.log("MQTT Connected via WSS");
+    });
 
-  // Simpan client ke dalam useRef atau state agar bisa digunakan di fungsi playAlarm
-  mqttClientRef.current = client;
+    // Simpan client ke dalam useRef
+    mqttClientRef.current = client;
 
-  return () => client.end();
-}, []);
+    return () => {
+      if (client) client.end();
+    };
+  }, []);
 
-const playAlarm = () => {
-  setIsAlarmPlaying(true);
-  audioRef.current.play();
+  const playAlarm = () => {
+    setIsAlarmPlaying(true);
+    if (audioRef.current) {
+      audioRef.current.play().catch(e => console.log("Autoplay blocked:", e));
+    }
 
-  // Kirim perintah ke ESP8266
-  if (mqttClientRef.current) {
-    mqttClientRef.current.publish('cocod/weather/alarm', 'ON');
-  }
-}; 
+    // Kirim perintah ke ESP8266 melalui MQTT
+    if (mqttClientRef.current && mqttClientRef.current.connected) {
+      mqttClientRef.current.publish('cocod/weather/alarm', 'ON');
+      console.log("Alarm signal sent to MQTT");
+    }
+  };
 
   const stopAlarm = () => {
     if (audioRef.current) {
@@ -69,16 +73,21 @@ const playAlarm = () => {
       audioRef.current.currentTime = 0;
     }
     setIsAlarmPlaying(false);
-    setAlarm(""); 
+    setAlarm("");
+    
+    // Opsional: Kirim sinyal OFF ke ESP8266
+    if (mqttClientRef.current && mqttClientRef.current.connected) {
+      mqttClientRef.current.publish('cocod/weather/alarm', 'OFF');
+    }
   };
 
+  // Sisanya (fetchWeather, updateBackground, useEffect lokasi) tetap sama...
   const fetchWeather = (lat, lon) => {
     fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}`)
       .then(res => res.json())
       .then(data => {
         setWeather(data);
         updateBackground(data.weather[0].main);
-        
         const newLog = {
           time: new Date().toLocaleTimeString(),
           temp: Math.round(data.main.temp - 273.15),
@@ -90,7 +99,6 @@ const playAlarm = () => {
 
   const updateBackground = (main) => {
     const images = { Rain: 'rainy', Clouds: 'cloudy', Clear: 'clear' };
-    // Perbaikan 4: Gunakan path absolut /img/
     setBgImage(`/img/${images[main] || 'fair'}.jpg`);
   };
 
@@ -112,6 +120,7 @@ const playAlarm = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
+      {/* Kode JSX (HTML) Anda tetap sama seperti sebelumnya */}
       <div className="bg-white/20 backdrop-blur-xl border border-white/30 p-8 rounded-3xl shadow-2xl w-full max-w-4xl text-white">
         
         <div className="flex flex-col md:flex-row justify-between items-center mb-10">
@@ -140,7 +149,6 @@ const playAlarm = () => {
           </div>
         </div>
 
-        {/* Alarm Section */}
         <div className={`p-6 rounded-2xl mb-8 flex flex-col md:flex-row items-center gap-6 transition-all duration-500 ${isAlarmPlaying ? 'bg-red-500/60 animate-pulse border-red-400' : 'bg-black/30 border border-white/10'}`}>
           <div className="flex items-center gap-4">
             <label className="font-bold text-lg">Set Alarm:</label>
@@ -168,7 +176,6 @@ const playAlarm = () => {
           </div>
         </div>
 
-        {/* Logs Table */}
         <div className="bg-black/20 rounded-2xl overflow-hidden border border-white/10">
           <table className="w-full text-left border-collapse">
             <thead className="bg-white/10">

@@ -38,12 +38,18 @@ const App = () => {
     return () => clearInterval(timer);
   }, [alarm, isAlarmPlaying]); // isAlarmPlaying sekarang terdefinisi
 
-  const playAlarm = () => {
-    setIsAlarmPlaying(true);
-    audioRef.current.play().catch(error => {
-      console.log("Autoplay diblokir. Silakan klik halaman untuk mengaktifkan audio.");
-    });
-  };
+const playAlarm = () => {
+  setIsAlarmPlaying(true);
+  
+  // 1. Bunyi di Browser
+  audioRef.current.play().catch(error => console.log(error));
+
+  // 2. Kirim sinyal ke ESP8266 (Ganti dengan IP ESP8266 Anda)
+  const ESP_IP = "192.168.4.1"; 
+  fetch(`http://${ESP_IP}/trigger-alarm`)
+    .then(() => console.log("ESP8266 Alarm Triggered"))
+    .catch(err => console.error("Gagal menghubungi ESP8266", err));
+};
 
   const stopAlarm = () => {
     if (audioRef.current) {
